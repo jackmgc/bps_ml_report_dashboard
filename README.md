@@ -1,9 +1,3 @@
-# Run the GUI without Docker
-
-The GUI runs locally with Python. The full ETL/DW/ML pipeline still needs
-PostgreSQL, but you install and start PostgreSQL yourself; the app only checks
-the connection and may create `PSQL_DBNAME` when your user has permission.
-
 ## Windows
 
 ```powershell
