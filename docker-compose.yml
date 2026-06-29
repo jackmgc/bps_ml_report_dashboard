@@ -1,0 +1,37 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: staging
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d staging"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    environment:
+      PSQL_HOST: db
+      PSQL_PORT: 5432
+      PSQL_USER: postgres
+      PSQL_PASSWORD: postgres
+      PSQL_DBNAME: staging
+      DATA_FOLDER: ./data
+      REPORTS_FOLDER: ./reports
+      LOG_LEVEL: INFO
+      RECONCILIATION_TOLERANCE: 0.0001
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data:ro
+      - ./reports:/app/reports
+    command: ["python", "main.py", "--phase", "all"]
+
+volumes:
+  postgres_data:

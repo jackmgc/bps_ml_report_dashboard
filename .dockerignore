@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+env
+ENV
+__pycache__
+*.pyc
+.pytest_cache
+.coverage
+.env
+.env.local
+reports/*.log
+reports/*.txt
+pipeline_output.log

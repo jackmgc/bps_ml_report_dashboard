@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="id" class="h-full">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipeline Dashboard · Indikator Regional Indonesia</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = { theme: { extend: { colors: { accent: '#4f46e5', ink:'#0f172a' },
+  fontFamily: { sans:['-apple-system','BlinkMacSystemFont','Segoe UI','Roboto','Helvetica','Arial','sans-serif'] } } } }
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<script defer src="/static/app.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+<style>[x-cloak]{display:none!important}
+  body{font-size:14px}
+  .num{font-variant-numeric:tabular-nums}
+  .logline{white-space:pre-wrap;word-break:break-word}
+  .seg button.active{background:#fff;color:#0f172a;box-shadow:0 1px 2px rgba(15,23,42,.12);font-weight:600}
+  ::-webkit-scrollbar{height:9px;width:9px}::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:5px}::-webkit-scrollbar-track{background:transparent}
+  table.matrix td.cell{cursor:pointer}table.matrix td.cell:hover{outline:2px solid #4f46e5;outline-offset:-2px}
+</style>
+</head>
+<body class="h-full bg-slate-100 text-slate-800 font-sans" x-data="dashboard()" x-init="init()" x-cloak>
+<div class="flex h-full">
+
+  <!-- Sidebar -->
+  <aside class="w-64 flex-shrink-0 bg-slate-900 text-slate-300 flex flex-col h-full" :class="{'-ml-64':!sidebarOpen,'ml-0':sidebarOpen}" style="transition:margin .2s">
+    <div class="px-5 py-5 border-b border-slate-700/60">
+      <div class="text-white font-bold text-[15px] leading-tight">Pipeline Dashboard</div>
+      <div class="text-slate-400 text-[11px] mt-1">Indikator Regional Indonesia</div>
+    </div>
+    <nav class="flex-1 overflow-y-auto px-3 py-3 space-y-1">
+      <template x-for="n in nav" :key="n.id">
+        <button @click="switchView(n.id)" :class="view===n.id?'bg-accent text-white':'hover:bg-slate-800 hover:text-white'"
+                class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-[13.5px] text-left transition-colors">
+          <span class="w-5 h-5 flex-shrink-0 opacity-90" x-html="n.icon"></span>
+          <span x-text="n.label"></span>
+        </button>
+      </template>
+    </nav>
+    <div class="px-4 py-3 border-t border-slate-700/60 text-[11px] text-slate-400 leading-relaxed">
+      <div>Backend: <span class="text-slate-300">FastAPI</span></div>
+      <div>Pipeline: <span class="text-slate-300">python main.py</span></div>
+      <div class="mt-1" :class="dbReachable()?'text-emerald-400':'text-amber-400'">● <span x-text="dbStatusText()"></span></div>
+      <div class="mt-0.5 text-slate-500">Mode: <span class="font-semibold text-emerald-300">Local Python</span></div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="flex-1 min-w-0 flex flex-col h-full">
+    <!-- Topbar -->
+    <header class="sticky top-0 z-20 bg-white/90 backdrop-blur border-b border-slate-200 px-5 py-3 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <button @click="sidebarOpen=!sidebarOpen" class="lg:hidden p-1.5 rounded hover:bg-slate-100" x-show="false"></button>
+        <button @click="sidebarOpen=!sidebarOpen" class="lg:hidden p-1.5 rounded hover:bg-slate-100">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        </button>
+        <div class="min-w-0">
+          <h1 class="text-[17px] font-bold text-ink truncate" x-text="currentNav().label"></h1>
+          <div class="text-slate-500 text-[12px] truncate" x-text="currentNav().sub"></div>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <span class="text-[11.5px] px-3 py-1 rounded-full border" :class="runPillClass()" x-text="runPillText()"></span>
+        <button x-show="!run.running" @click="quickRunAll()"
+                class="bg-accent hover:bg-indigo-700 text-white text-[13px] font-medium px-4 py-1.5 rounded-lg flex items-center gap-1.5">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>Run All
+        </button>
+        <button x-show="run.running" @click="stopRun()"
+                class="bg-rose-600 hover:bg-rose-700 text-white text-[13px] font-medium px-4 py-1.5 rounded-lg flex items-center gap-1.5">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12"/></svg>Stop
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 overflow-y-auto p-6">
+
+      <!-- ================= OVERVIEW ================= -->
+      <section x-show="view==='overview'" class="space-y-5">
+        <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-[13px] text-indigo-900">
+          <b>Cara pakai:</b> buka <button @click="switchView('run')" class="underline font-semibold">Run Control</button> untuk menjalankan pipeline, lalu kembali ke sini. Ganti target/metode pada panel Clustering & Regresi. Semua interaksi berjalan lokal.
+        </div>
+        <template x-if="resultsLoading()">
+          <div class="flex items-center gap-3 text-slate-500 py-10">
+            <svg class="animate-spin h-5 w-5 text-accent" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/></svg>
+            <span>Memuat hasil ML…</span>
+          </div>
+        </template>
+        <template x-if="resultsError()">
+          <div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-amber-800">
+            <div class="font-semibold mb-1">Hasil ML belum tersedia</div>
+            <div class="text-[13px]" x-text="resultsError()"></div>
+            <button @click="switchView('run')" class="mt-3 bg-amber-600 hover:bg-amber-700 text-white text-[13px] px-3 py-1.5 rounded">Buka Run Control →</button>
+          </div>
+        </template>
+        <template x-if="!resultsError() && !resultsLoading()">
+          <div>
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+              <template x-for="c in overviewKpis()" :key="c.k">
+                <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm">
+                  <div class="text-[11px] uppercase tracking-wide text-slate-500" x-text="c.k"></div>
+                  <div class="text-2xl font-bold text-ink mt-0.5 num" x-text="c.v"></div>
+                  <div class="text-[11.5px] text-slate-500 mt-0.5" x-text="c.h"></div>
+                </div>
+              </template>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Performa Model per Target Pendidikan</div><div class="text-slate-500 text-[12.5px]">Bandingkan kualitas klustering (silhouette) & regresi (R² disesuaikan).</div></div>
+              <div class="overflow-x-auto"><table class="w-full text-[12.5px]">
+                <thead class="bg-slate-50 text-slate-600"><tr>
+                  <th class="text-left px-3 py-2 font-semibold">Target</th><th class="px-3 py-2 num">K</th><th class="px-3 py-2 num">Sil. KM</th><th class="px-3 py-2 num">Cluster HDB</th><th class="px-3 py-2 num">Noise</th><th class="px-3 py-2 num">Sil. HDB</th><th class="px-3 py-2 num">R²Adj LR</th><th class="px-3 py-2 num">R²Adj RF</th><th class="px-3 py-2 num">MAE</th>
+                </tr></thead>
+                <tbody><template x-for="row in perfRows()" :key="row.key">
+                  <tr class="border-t border-slate-100 hover:bg-slate-50">
+                    <td class="px-3 py-2 font-semibold"><span x-text="row.name"></span><div class="text-[10.5px] text-slate-400 font-normal" x-text="row.long"></div></td>
+                    <td class="px-3 py-2 text-right num" x-text="row.kKm"></td><td class="px-3 py-2 text-right num" x-text="fmt(row.silKm,3)"></td>
+                    <td class="px-3 py-2 text-right num" x-text="row.kHdb"></td><td class="px-3 py-2 text-right num" x-text="fmt(row.noise,3)"></td><td class="px-3 py-2 text-right num" x-text="fmt(row.silHdb,3)"></td>
+                    <td class="px-3 py-2 text-right num" x-text="fmt(row.r2lr,3)"></td><td class="px-3 py-2 text-right num" x-text="fmt(row.r2rf,3)"></td>
+                    <td class="px-3 py-2 text-right num" x-text="fmt(row.mae,3)"></td>
+                  </tr>
+                </template></tbody>
+              </table></div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ================= RUN CONTROL ================= -->
+      <section x-show="view==='run'" class="space-y-5">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500">.env</div><div class="text-lg font-bold mt-0.5" :class="health?.env_present?'text-emerald-600':'text-rose-600'" x-text="health?.env_present?'Ada':'Tidak ada'"></div></div>
+          <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500">DB Config</div><div class="text-lg font-bold mt-0.5" :class="health?.db?.configured?'text-emerald-600':'text-rose-600'" x-text="health?.db?.configured?'Terconfig':'Belum'"></div></div>
+          <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500">DB Reachable</div><div class="text-lg font-bold mt-0.5" :class="health?.db?.reachable?'text-emerald-600':'text-amber-600'" x-text="health?.db?.reachable?'Ya':'Tidak'"></div></div>
+          <div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500">ML Results</div><div class="text-lg font-bold mt-0.5" :class="status?.has_results?'text-emerald-600':'text-slate-400'" x-text="status?.has_results?'Siap':'Belum'"></div></div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+          <div class="px-5 py-4 border-b border-slate-200 flex items-center justify-between gap-3">
+            <div><div class="font-semibold text-[15px]">Pilih Phase</div><div class="text-slate-500 text-[12.5px]">Klik salah satu phase lalu Run. <code>--phase all</code> menjalankan semuanya berurutan.</div></div>
+            <span class="text-[11.5px] px-2.5 py-1 rounded-full border whitespace-nowrap bg-emerald-50 text-emerald-700 border-emerald-200">Mode: Local Python</span>
+          </div>
+          <div class="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            <template x-for="p in phases" :key="p.id">
+              <button @click="run.phase=p.id" :class="run.phase===p.id?'border-accent bg-indigo-50 text-accent':'border-slate-200 hover:border-slate-300'"
+                      class="border rounded-lg px-3 py-2.5 text-left transition-colors">
+                <div class="text-[13px] font-semibold" x-text="p.id"></div><div class="text-[11px] text-slate-500" x-text="p.desc"></div>
+              </button>
+            </template>
+          </div>
+          <div class="px-4 pb-4 flex flex-wrap items-center gap-4">
+            <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" x-model="run.forceDw" class="rounded"> <span>--force-dw-load</span><span class="text-slate-400 text-[11px]">(lewati gate rekonsiliasi)</span></label>
+            <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" x-model="run.skipVal" class="rounded"> <span>--skip-validation</span><span class="text-slate-400 text-[11px]">(lewati cek kualitas)</span></label>
+            <button @click="runPipeline()" :disabled="run.running" class="ml-auto bg-accent hover:bg-indigo-700 disabled:opacity-50 text-white text-[13.5px] font-medium px-5 py-2 rounded-lg flex items-center gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg> Run <span class="font-mono" x-text="run.phase"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Progress tracker (for 'all') -->
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5" x-show="run.phase==='all'">
+          <div class="font-semibold text-[15px] mb-3">Progress (11 phases)</div>
+          <div class="flex flex-wrap gap-2">
+            <template x-for="(ph,i) in phaseSteps" :key="ph">
+              <div class="flex items-center gap-1.5 text-[12px]">
+                <span class="w-6 h-6 rounded-full flex items-center justify-center font-semibold"
+                      :class="stepState(i)">
+                  <span x-text="i+1"></span>
+                </span>
+                <span :class="stepTextClass(i)" x-text="ph"></span>
+                <span x-show="i<phaseSteps.length-1" class="text-slate-300">→</span>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- Live log -->
+        <div class="bg-slate-900 rounded-lg shadow-sm overflow-hidden">
+          <div class="px-4 py-2.5 border-b border-slate-700/60 flex items-center justify-between">
+            <div class="text-slate-200 text-[13px] font-medium flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full" :class="run.running?'bg-emerald-400 animate-pulse':'bg-slate-500'"></span>Live Log
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="text-slate-400 text-[11px] num" x-text="(run.lines.length)+' baris'"></span>
+              <button @click="run.lines=[]" class="text-slate-400 hover:text-slate-200 text-[11px] px-2 py-0.5 rounded hover:bg-slate-700">clear</button>
+            </div>
+          </div>
+          <div x-ref="logbox" class="h-80 overflow-y-auto p-3 font-mono text-[12px] leading-relaxed text-slate-300">
+            <template x-if="run.lines.length===0">
+              <div class="text-slate-500">Belum ada output. Jalankan pipeline untuk melihat log real-time.</div>
+            </template>
+            <template x-for="(l,i) in run.lines" :key="i">
+              <div class="logline" :class="logLineClass(l)" x-text="l"></div>
+            </template>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= CLUSTERING ================= -->
+      <section x-show="view==='clustering'" class="space-y-5" x-init="watchView('clustering')">
+        <template x-if="resultsError()"><div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-amber-800" x-html="emptyHtml()"></div></template>
+        <template x-if="!resultsError()">
+          <div class="space-y-5">
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="text-[12px] text-slate-500">Target:</span><div class="seg inline-flex bg-slate-100 border border-slate-200 rounded-lg p-0.5"><template x-for="t in results.targets" :key="t.key"><button @click="cl.target=t.key;renderClustering()" :class="cl.target===t.key?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500" x-text="t.name"></button></template></div>
+              <span class="text-[12px] text-slate-500 ml-2">Metode:</span><div class="seg inline-flex bg-slate-100 border border-slate-200 rounded-lg p-0.5"><button @click="cl.method='kmeans';renderClustering()" :class="cl.method==='kmeans'?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500">K-Means</button><button @click="cl.method='hdbscan';renderClustering()" :class="cl.method==='hdbscan'?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500">HDBSCAN</button></div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <template x-for="c in clMetrics()" :key="c.k"><div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500" x-text="c.k"></div><div class="text-xl font-bold mt-0.5 num" x-text="c.v"></div></div></template>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Visualisasi Kluster</div><div class="text-slate-500 text-[12.5px]" x-text="clPlotDesc()"></div></div>
+              <div class="p-4"><div class="relative h-96"><canvas id="clChart"></canvas></div><div class="flex flex-wrap gap-3 mt-3 text-[12px]"><template x-for="l in clLegend()" :key="l.label"><span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full" :style="`background:${l.color}`"></span><span x-text="l.label"></span></span></template></div></div>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Anggota Kluster</div><div class="text-slate-500 text-[12.5px]">Provinsi dalam tiap kluster.</div></div>
+              <div class="overflow-x-auto max-h-80"><table class="w-full text-[12.5px]"><thead class="bg-slate-50 text-slate-600 sticky top-0"><tr><th class="text-left px-3 py-2">Kluster</th><th class="px-3 py-2 num">Jumlah</th><th class="px-3 py-2 num">%</th><th class="px-3 py-2 num">Rata-rata target</th><th class="text-left px-3 py-2">Provinsi</th></tr></thead><tbody><template x-for="c in clMembers()" :key="c.label"><tr class="border-t border-slate-100 hover:bg-slate-50"><td class="px-3 py-2"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold" :style="c.tagStyle" x-text="c.name"></span></td><td class="px-3 py-2 text-right num" x-text="c.n"></td><td class="px-3 py-2 text-right num" x-text="c.pct+'%'"></td><td class="px-3 py-2 text-right num" x-text="fmt(c.tm,2)"></td><td class="px-3 py-2 text-[11.5px] text-slate-500" x-text="c.members"></td></tr></template></tbody></table></div>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Rata-rata Prediktor per Kluster</div><div class="text-slate-500 text-[12.5px]">Pola indikator sosial-ekonomi tiap kluster.</div></div>
+              <div class="overflow-x-auto"><table class="heatmap w-full text-[11.5px]" id="clHeatmap"></table></div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ================= REGRESSION ================= -->
+      <section x-show="view==='regression'" class="space-y-5" x-init="watchView('regression')">
+        <template x-if="resultsError()"><div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-amber-800" x-html="emptyHtml()"></div></template>
+        <template x-if="!resultsError()">
+          <div class="space-y-5">
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="text-[12px] text-slate-500">Target:</span><div class="seg inline-flex bg-slate-100 border border-slate-200 rounded-lg p-0.5"><template x-for="t in results.targets" :key="t.key"><button @click="rg.target=t.key;renderRegression()" :class="rg.target===t.key?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500" x-text="t.name"></button></template></div>
+              <span class="text-[12px] text-slate-500 ml-2">Model:</span><div class="seg inline-flex bg-slate-100 border border-slate-200 rounded-lg p-0.5"><button @click="rg.model='linear';renderRegression()" :class="rg.model==='linear'?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500">Linear Regression</button><button @click="rg.model='rf';renderRegression()" :class="rg.model==='rf'?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500">Random Forest</button></div>
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <template x-for="c in rgMetrics()" :key="c.k"><div class="bg-white border border-slate-200 rounded-lg p-4 shadow-sm"><div class="text-[11px] uppercase text-slate-500" x-text="c.k"></div><div class="text-xl font-bold mt-0.5 num" x-text="c.v"></div></div></template>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]" x-text="rgBarTitle()"></div><div class="text-slate-500 text-[12.5px]" x-text="rgBarDesc()"></div></div>
+              <div class="p-4"><div class="relative h-[420px]"><canvas id="rgChart"></canvas></div></div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ================= CORRELATION ================= -->
+      <section x-show="view==='correlation'" class="space-y-5" x-init="watchView('correlation')">
+        <template x-if="resultsError()"><div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-amber-800" x-html="emptyHtml()"></div></template>
+        <template x-if="!resultsError()">
+          <div class="space-y-5">
+            <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-[13px] text-indigo-900">Matriks korelasi Spearman antara 8 prediktor (baris) & 5 target (kolom). Hijau = positif, merah = negatif. * = signifikan (p&lt;0.05).</div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Matriks Korelasi Spearman</div><div class="text-slate-500 text-[12.5px]">Klik sel untuk detail.</div></div>
+              <div class="overflow-x-auto"><table class="matrix w-full text-[11.5px]" id="corrMatrix"></table></div>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200 flex flex-wrap items-center gap-3">
+                <div><div class="font-semibold text-[15px]">Detail Target</div><div class="text-slate-500 text-[12.5px]">Korelasi tiap prediktor terhadap target.</div></div>
+                <div class="seg inline-flex bg-slate-100 border border-slate-200 rounded-lg p-0.5 ml-auto"><template x-for="t in results.targets" :key="t.key"><button @click="cr.target=t.key;renderCorrBars()" :class="cr.target===t.key?'active':''" class="px-3 py-1 text-[12.5px] rounded-md text-slate-500" x-text="t.name"></button></template></div>
+              </div>
+              <div class="p-4"><div class="relative h-[420px]"><canvas id="crChart"></canvas></div></div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ================= EXPLORER ================= -->
+      <section x-show="view==='explorer'" class="space-y-5" x-init="watchView('explorer')">
+        <template x-if="resultsError()"><div class="bg-amber-50 border border-amber-300 rounded-lg p-5 text-amber-800" x-html="emptyHtml()"></div></template>
+        <template x-if="!resultsError()">
+          <div class="space-y-5">
+            <div class="flex items-center gap-3"><span class="text-[12px] text-slate-500">Provinsi:</span>
+              <select x-model="ex.prov" @change="renderExplorer()" class="border border-slate-200 rounded-lg px-3 py-1.5 text-[13px] bg-white"><template x-for="p in results.provinces" :key="p"><option :value="p" x-text="p"></option></template></select>
+            </div>
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Indikator Sosial-Ekonomi (rata-rata)</div><div class="text-slate-500 text-[12.5px]">8 prediktor.</div></div>
+                <div class="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5"><template x-for="p in results.predictors" :key="p.key"><div class="bg-slate-50 border border-slate-200 rounded-lg p-3"><div class="text-[11px] text-slate-500" x-text="p.name"></div><div class="text-lg font-bold num" x-text="fmt(exData()?.predictors?.[p.key],2)"></div></div></template></div>
+              </div>
+              <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+                <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Target Pendidikan (rata-rata)</div><div class="text-slate-500 text-[12.5px]">5 indikator pendidikan.</div></div>
+                <div class="p-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5"><template x-for="t in results.targets" :key="t.key"><div class="bg-slate-50 border border-slate-200 rounded-lg p-3"><div class="text-[11px] text-slate-500" x-text="t.name"></div><div class="text-lg font-bold num" x-text="fmt(exData()?.targets?.[t.key],2)"></div></div></template></div>
+              </div>
+            </div>
+            <div class="bg-white border border-slate-200 rounded-lg shadow-sm">
+              <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Semua Provinsi</div><div class="text-slate-500 text-[12.5px]">Klik header untuk sortir.</div></div>
+              <div class="overflow-x-auto max-h-[480px]"><table class="w-full text-[12.5px]" id="exTable"></table></div>
+            </div>
+          </div>
+        </template>
+      </section>
+
+      <!-- ================= CONFIG ================= -->
+      <section x-show="view==='config'" class="space-y-5">
+        <div class="bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-[13px] text-indigo-900">Edit <code>config/ml_config.json</code>. Setelah menyimpan, jalankan ulang <button @click="switchView('run')" class="underline font-semibold">ml-pipeline</button> untuk menerapkan.</div>
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm p-5 space-y-5" x-show="configDraft">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><label class="block text-[12px] text-slate-500 mb-1">Correlation Threshold</label><input type="number" step="0.05" min="0" max="1" x-model.number="configDraft.feature_selection.correlation_threshold" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+            <div><label class="block text-[12px] text-slate-500 mb-1">K-Means max_k</label><input type="number" min="2" x-model.number="configDraft.clustering.kmeans.max_k" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+            <div><label class="block text-[12px] text-slate-500 mb-1">K-Means random_state</label><input type="number" x-model.number="configDraft.clustering.kmeans.random_state" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+            <div><label class="block text-[12px] text-slate-500 mb-1">HDBSCAN min_cluster_size</label><input type="number" min="2" x-model.number="configDraft.clustering.hdbscan.min_cluster_size" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+            <div><label class="block text-[12px] text-slate-500 mb-1">HDBSCAN min_samples</label><input type="number" min="1" x-model.number="configDraft.clustering.hdbscan.min_samples" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+            <div><label class="block text-[12px] text-slate-500 mb-1">HDBSCAN cluster_selection_epsilon</label><input type="number" step="0.05" min="0" x-model.number="configDraft.clustering.hdbscan.cluster_selection_epsilon" class="w-full border border-slate-200 rounded-lg px-3 py-2 num"></div>
+          </div>
+          <div class="flex flex-wrap items-center gap-6">
+            <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" x-model="configDraft.clustering.target_weighting.enabled" class="rounded"> <span>Target weighting</span></label>
+            <div x-show="configDraft.clustering.target_weighting.enabled"><label class="text-[12px] text-slate-500 mr-1">weight</label><input type="number" step="0.1" x-model.number="configDraft.clustering.target_weighting.weight" class="w-24 border border-slate-200 rounded-lg px-3 py-1.5 num"></div>
+            <label class="flex items-center gap-2 text-[13px]"><input type="checkbox" x-model="configDraft.prediction.use_scaling" class="rounded"> <span>Prediction scaling</span></label>
+            <div x-show="configDraft.prediction.use_scaling"><select x-model="configDraft.prediction.scaler_type" class="border border-slate-200 rounded-lg px-3 py-1.5 text-[13px]"><option value="robust">robust</option><option value="standard">standard</option></select></div>
+          </div>
+          <div>
+            <div class="font-semibold text-[14px] mb-2">Override per target</div>
+            <div class="overflow-x-auto"><table class="w-full text-[12.5px]"><thead class="bg-slate-50 text-slate-600"><tr><th class="text-left px-3 py-2">Target</th><th class="px-3 py-2">kmeans_k</th><th class="px-3 py-2">hdbscan_min_cluster_size</th></tr></thead><tbody><template x-for="t in results?.targets || defaultTargets" :key="t.key"><tr class="border-t border-slate-100"><td class="px-3 py-2 font-semibold" x-text="t.key"></td><td class="px-3 py-2"><input type="number" min="2" :value="configDraft.overrides[t.key]?.kmeans_k ?? ''" @input="setOverride(t.key,'kmeans_k',$event.target.valueAsNumber||null)" class="w-24 border border-slate-200 rounded px-2 py-1 num"></td><td class="px-3 py-2"><input type="number" min="2" :value="configDraft.overrides[t.key]?.hdbscan_min_cluster_size ?? ''" @input="setOverride(t.key,'hdbscan_min_cluster_size',$event.target.valueAsNumber||null)" class="w-32 border border-slate-200 rounded px-2 py-1 num"></td></tr></template></tbody></table></div>
+          </div>
+          <div class="flex gap-2">
+            <button @click="saveConfig()" class="bg-accent hover:bg-indigo-700 text-white text-[13.5px] font-medium px-5 py-2 rounded-lg">Simpan Config</button>
+            <button @click="loadConfig()" class="border border-slate-200 hover:bg-slate-50 text-[13.5px] px-5 py-2 rounded-lg">Reset</button>
+          </div>
+        </div>
+        <div x-show="!configDraft" class="text-slate-400">Memuat konfigurasi…</div>
+      </section>
+
+      <!-- ================= REPORTS ================= -->
+      <section x-show="view==='reports'" class="space-y-5">
+        <div class="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div class="px-5 py-4 border-b border-slate-200"><div class="font-semibold text-[15px]">Artifacts</div><div class="text-slate-500 text-[12.5px]">File hasil pipeline di <code>reports/</code>.</div></div>
+          <table class="w-full text-[12.5px]"><thead class="bg-slate-50 text-slate-600"><tr><th class="text-left px-4 py-2.5">Artifact</th><th class="text-left px-4 py-2.5">Status</th><th class="px-4 py-2.5 num">Ukuran</th><th class="px-4 py-2.5">Diubah</th><th class="text-right px-4 py-2.5">Aksi</th></tr></thead><tbody><template x-for="a in (status?.artifacts||[])" :key="a.name"><tr class="border-t border-slate-100 hover:bg-slate-50"><td class="px-4 py-2.5 font-semibold" x-text="a.label"><div class="text-[11px] text-slate-400 font-normal" x-text="a.file"></div></td><td class="px-4 py-2.5"><span class="inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold" :class="a.exists?'bg-emerald-100 text-emerald-700':'bg-slate-100 text-slate-400'" x-text="a.exists?'Ada':'Belum'"></span></td><td class="px-4 py-2.5 text-right num" x-text="a.exists?fmtBytes(a.size):'–'"></td><td class="px-4 py-2.5 num" x-text="a.mtime||'–'"></td><td class="px-4 py-2.5 text-right whitespace-nowrap"><button @click="openReport(a)" :disabled="!a.exists" class="text-accent hover:underline disabled:text-slate-300 mr-3">Buka</button><a :href="a.exists?('/api/reports/'+a.name):'#'" :download="a.exists?a.file:null" :class="!a.exists&&'pointer-events-none text-slate-300'" class="text-accent hover:underline">Unduh</a></td></tr></template></tbody></table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<!-- Toasts -->
+<div class="fixed bottom-5 right-5 z-50 space-y-2">
+  <template x-for="t in toasts" :key="t.id">
+    <div class="px-4 py-2.5 rounded-lg shadow-lg text-[13px] text-white max-w-sm" :class="t.type==='error'?'bg-rose-600':t.type==='success'?'bg-emerald-600':'bg-slate-800'" x-text="t.msg" x-transition.opacity></div>
+  </template>
+</div>
+</body>
+</html>
