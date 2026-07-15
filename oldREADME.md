@@ -229,36 +229,6 @@ python main.py --phase ml-report
 python main.py --phase all --force-dw-load
 ```
 
-### Run With Docker
-
-This starts PostgreSQL in Docker, creates the `staging` database automatically, runs the full ETL + ML pipeline, and writes generated reports into `./reports`.
-
-```bash
-docker compose up --build app
-```
-
-Useful follow-up commands:
-
-```bash
-# Re-run the full pipeline without rebuilding the image
-docker compose run --rm app
-
-# Run a single phase
-docker compose run --rm app python main.py --phase aggregation
-
-# Stop containers and keep the database volume
-docker compose down
-
-# Reset the Docker database volume completely
-docker compose down -v
-```
-
-Inspect PostgreSQL from inside the Docker network:
-
-```bash
-docker compose exec db psql -U postgres -d staging
-```
-
 ### Alternative: Using results.py (Standalone ML)
 ```bash
 # Run ML pipeline and generate report (standalone mode)
