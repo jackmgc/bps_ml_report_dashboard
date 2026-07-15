@@ -81,3 +81,41 @@ refuses that, create it manually:
 ```bash
 createdb -h localhost -p 5432 -U postgres staging
 ```
+
+# Command line
+### Run Complete Pipeline
+```bash
+# Run entire ETL + ML pipeline
+python main.py --phase all
+
+# Run ETL only (up to validation)
+python main.py --phase validate
+
+# Run up to aggregation
+python main.py --phase aggregation
+
+# Run ML pipeline only
+python main.py --phase ml-pipeline
+
+# Generate ML report only
+python main.py --phase ml-report
+
+# Force DW load even if reconciliation fails (use with caution)
+python main.py --phase all --force-dw-load
+```
+
+### Alternative: Using results.py (Standalone ML)
+```bash
+# Run ML pipeline and generate report (standalone mode)
+python results.py
+```
+
+### Export Aggregations to CSV
+```bash
+# Export ML-ready data to CSV files
+python export_aggregations.py
+
+# Creates:
+# - data/ml_clustering_aggregated.csv (province-level, for K-Means/HDBSCAN)
+# - data/ml_timeseries_province_year.csv (province-year level, for regression)
+```
